@@ -15,6 +15,7 @@ type ChanBroker struct {
 	UnRegSub    chan Subscriber
 	Contents    chan Content
 	Stop        chan bool
+	exit        bool
 	Subscribers map[Subscriber]bool
 	lock        sync.RWMutex
 	timeout     time.Duration
@@ -26,6 +27,7 @@ func NewChanBroker(timeout time.Duration) *ChanBroker {
 	ChanBroker.UnRegSub = make(chan Subscriber)
 	ChanBroker.Contents = make(chan Content)
 	ChanBroker.Stop = make(chan bool)
+	ChanBroker.exit = false
 	ChanBroker.Subscribers = make(map[Subscriber]bool)
 	ChanBroker.timeout = timeout
 	ChanBroker.run()
@@ -61,31 +63,43 @@ func (self *ChanBroker) run() {
 				self.lock.Unlock()
 				close(sub)
 			case <-self.Stop:
-				self.lock.Lock()
-				for sub := range self.Subscribers {
-					delete(self.Subscribers, sub)
-					close(sub)
+				if self.exit == false {
+					self.exit = true
+					close(self.Stop)
+					self.lock.Lock()
+					for sub := range self.Subscribers {
+						delete(self.Subscribers, sub)
+						close(sub)
+					}
+					self.lock.Unlock()
+
+					return
 				}
-				self.lock.Unlock()
 			}
 		}
 	}()
 }
 
-func (self *ChanBroker) RegSubscriber() Subscriber {
-	sub := make(Subscriber)
+func (self *ChanBroker) RegSubscriber(size uint) Subscriber {
+	if self.exit == true {
+		return nil
+	}
+	sub := make(Subscriber, size) // maybe block
 	self.RegSub <- sub
 	return sub
 }
 
 func (self *ChanBroker) UnRegSubscriber(sub Subscriber) {
-	self.UnRegSub <- sub
+	if self.exit == true {
+		return
+	}
+	self.UnRegSub <- sub // maybe block
 }
 
 func (self *ChanBroker) StopPublish() {
-	self.Stop <- true
+	self.Stop <- true // maybe block
 }
 
 func (self *ChanBroker) PubContent(c Content) {
-	self.Contents <- c
+	self.Contents <- c // maybe block
 }

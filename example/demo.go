@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/myself659/ChanBroker"
+	"math/rand"
 	"strconv"
 	"time"
 )
@@ -12,18 +13,31 @@ type event struct {
 	info string
 }
 
-func SubDone(sub2 ChanBroker.Subscriber, b *ChanBroker.ChanBroker) {
-	for c := range sub2 {
-		switch t := c.(type) {
-		case string:
-			fmt.Println(sub2, "string:", t)
-		case int:
-			fmt.Println(sub2, "int:", t)
-			t = t
-		case event:
-			//fmt.Println(sub2, "event:", t)
-		default:
+func UnDoSubscriber(sub ChanBroker.Subscriber, b *ChanBroker.ChanBroker) {
+	n := rand.Int63n(100)
+	tn := time.Duration(n)
+	<-time.After(tn * time.Second)
+	b.UnRegSubscriber(sub)
+}
 
+func SubscriberDo(sub ChanBroker.Subscriber, b *ChanBroker.ChanBroker) {
+	for {
+		select {
+		case <-b.Stop:
+			fmt.Println(sub, "exit")
+			return
+		case c := <-sub:
+			switch t := c.(type) {
+			case string:
+				fmt.Println(sub, "string:", t)
+			case int:
+				fmt.Println(sub, "int:", t)
+				t = t
+			case event:
+				fmt.Println(sub, "event:", t)
+			default:
+
+			}
 		}
 	}
 
@@ -32,8 +46,11 @@ func main() {
 	b := ChanBroker.NewChanBroker(time.Second)
 
 	for i := 0; i < 1000; i++ {
-		sub := b.RegSubscriber()
-		go SubDone(sub, b)
+		sub := b.RegSubscriber(uint(i))
+		if sub != nil {
+			go SubscriberDo(sub, b)
+			go UnDoSubscriber(sub, b)
+		}
 	}
 
 	ticker := time.NewTicker(time.Second)
@@ -58,5 +75,6 @@ func main() {
 	}
 	ticker.Stop()
 	b.StopPublish()
+	<-time.After(time.Second)
 	fmt.Println("exit")
 }
