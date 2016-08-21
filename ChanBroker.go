@@ -22,8 +22,8 @@ type ChanBroker struct {
 	timeout     time.Duration
 }
 
-var errBrokerExit error = errors.New("Broker exit")
-var errTimeOut error = errors.New("Time out")
+var errBrokerExit error = errors.New("ChanBroker exit")
+var errTimeOut error = errors.New("ChanBroker Time out")
 
 func NewChanBroker(timeout time.Duration) *ChanBroker {
 	ChanBroker := new(ChanBroker)

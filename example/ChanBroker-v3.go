@@ -22,8 +22,8 @@ type ChanBroker struct {
 	timeout     time.Duration
 }
 
-var errBrokerExit error = errors.New("Broker exit")
-var errTimeOut error = errors.New("Time out")
+var errBrokerExit error = errors.New("ChanBroker exit")
+var errTimeOut error = errors.New("ChanBroker Time out")
 
 func NewChanBroker(timeout time.Duration) *ChanBroker {
 	ChanBroker := new(ChanBroker)
@@ -92,10 +92,6 @@ func (self *ChanBroker) RegSubscriber(size uint) (Subscriber, error) {
 	case _, ok := <-self.Stop:
 		if ok == false {
 			return nil, errBrokerExit
-		} else {
-			sub := make(Subscriber, size)
-			self.RegSub <- sub
-			return sub, nil
 		}
 	case <-time.After(self.timeout):
 		return nil, errTimeOut
@@ -112,9 +108,6 @@ func (self *ChanBroker) UnRegSubscriber(sub Subscriber) {
 	case _, ok := <-self.Stop:
 		if ok == false {
 			return
-		} else {
-			self.UnRegSub <- sub
-			return
 		}
 	case <-time.After(self.timeout):
 		return
@@ -130,9 +123,6 @@ func (self *ChanBroker) StopPublish() {
 	case _, ok := <-self.Stop:
 		if ok == false {
 			return
-		} else {
-			self.Stop <- true
-			return
 		}
 	default:
 		self.Stop <- true // maybe send on closed channel
@@ -145,9 +135,6 @@ func (self *ChanBroker) PubContent(c Content) error {
 	case _, ok := <-self.Stop:
 		if ok == false {
 			return errBrokerExit
-		} else {
-			self.Contents <- c
-			return nil
 		}
 	case <-time.After(self.timeout):
 		return errTimeOut
