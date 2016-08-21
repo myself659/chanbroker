@@ -23,7 +23,6 @@ type ChanBroker struct {
 }
 
 var errBrokerExit error = errors.New("Broker exit")
-var errTimeOut error = errors.New("Time out")
 
 func NewChanBroker(timeout time.Duration) *ChanBroker {
 	ChanBroker := new(ChanBroker)
@@ -57,72 +56,61 @@ func (self *ChanBroker) run() {
 					}
 					self.lock.RUnlock()
 				}()
-
 			case sub := <-self.RegSub:
 				self.lock.Lock()
 				self.Subscribers[sub] = true
 				self.lock.Unlock()
-
 			case sub := <-self.UnRegSub:
 				self.lock.Lock()
-				_, ok := self.Subscribers[sub]
-				if ok {
-					delete(self.Subscribers, sub)
-					close(sub)
-				}
+				delete(self.Subscribers, sub)
 				self.lock.Unlock()
-
+				close(sub) // may be close of closed channel
 			case <-self.Stop:
-				// close(self.Stop)
-				self.lock.Lock()
-				for sub := range self.Subscribers {
-					delete(self.Subscribers, sub)
-					close(sub)
-				}
-				self.lock.Unlock()
+				if self.exit == false {
+					self.exit = true
+					close(self.Stop)
+					self.lock.Lock()
+					for sub := range self.Subscribers {
+						delete(self.Subscribers, sub)
+						close(sub)
+					}
+					self.lock.Unlock()
 
-				return // exit goroutine
+					return // exit goroutine
+				}
 			}
 		}
 	}()
 }
 
 func (self *ChanBroker) RegSubscriber(size uint) (Subscriber, error) {
-	sub := make(Subscriber, size)
-	select {
-	case <-time.After(self.timeout):
-		return nil, errTimeOut
-	case self.RegSub <- sub:
-		return sub, nil
+	if self.exit == true {
+		return nil, errBrokerExit
 	}
-
+	sub := make(Subscriber, size)
+	self.RegSub <- sub // maybe block
+	return sub, nil
 }
 
 func (self *ChanBroker) UnRegSubscriber(sub Subscriber) {
-	select {
-	case <-time.After(self.timeout):
-		return
-	case self.UnRegSub <- sub:
+	if self.exit == true {
 		return
 	}
-
+	self.UnRegSub <- sub // maybe block
 }
 
 func (self *ChanBroker) StopPublish() {
-	select {
-	case self.Stop <- true:
-		return
-	case <-time.After(self.timeout):
+	if self.exit == true {
 		return
 	}
+	self.Stop <- true // maybe  panic
 }
 
 func (self *ChanBroker) PubContent(c Content) error {
-	select {
-	case <-time.After(self.timeout):
-		return errTimeOut
-	case self.Contents <- c:
-		return nil
+	if self.exit == true {
+		return errBrokerExit
 	}
+	self.Contents <- c // maybe block
 
+	return nil
 }

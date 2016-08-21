@@ -73,7 +73,7 @@ func (self *ChanBroker) run() {
 				self.lock.Unlock()
 
 			case <-self.Stop:
-				// close(self.Stop)
+				close(self.Stop)
 				self.lock.Lock()
 				for sub := range self.Subscribers {
 					delete(self.Subscribers, sub)
@@ -88,11 +88,20 @@ func (self *ChanBroker) run() {
 }
 
 func (self *ChanBroker) RegSubscriber(size uint) (Subscriber, error) {
-	sub := make(Subscriber, size)
 	select {
+	case _, ok := <-self.Stop:
+		if ok == false {
+			return nil, errBrokerExit
+		} else {
+			sub := make(Subscriber, size)
+			self.RegSub <- sub
+			return sub, nil
+		}
 	case <-time.After(self.timeout):
 		return nil, errTimeOut
-	case self.RegSub <- sub:
+	default:
+		sub := make(Subscriber, size)
+		self.RegSub <- sub
 		return sub, nil
 	}
 
@@ -100,9 +109,17 @@ func (self *ChanBroker) RegSubscriber(size uint) (Subscriber, error) {
 
 func (self *ChanBroker) UnRegSubscriber(sub Subscriber) {
 	select {
+	case _, ok := <-self.Stop:
+		if ok == false {
+			return
+		} else {
+			self.UnRegSub <- sub
+			return
+		}
 	case <-time.After(self.timeout):
 		return
-	case self.UnRegSub <- sub:
+	default:
+		self.UnRegSub <- sub
 		return
 	}
 
@@ -110,18 +127,32 @@ func (self *ChanBroker) UnRegSubscriber(sub Subscriber) {
 
 func (self *ChanBroker) StopPublish() {
 	select {
-	case self.Stop <- true:
-		return
-	case <-time.After(self.timeout):
+	case _, ok := <-self.Stop:
+		if ok == false {
+			return
+		} else {
+			self.Stop <- true
+			return
+		}
+	default:
+		self.Stop <- true // maybe send on closed channel
 		return
 	}
 }
 
 func (self *ChanBroker) PubContent(c Content) error {
 	select {
+	case _, ok := <-self.Stop:
+		if ok == false {
+			return errBrokerExit
+		} else {
+			self.Contents <- c
+			return nil
+		}
 	case <-time.After(self.timeout):
 		return errTimeOut
-	case self.Contents <- c:
+	default:
+		self.Contents <- c
 		return nil
 	}
 

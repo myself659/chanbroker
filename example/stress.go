@@ -23,12 +23,13 @@ func UnDoSubscriber(sub ChanBroker.Subscriber, cb *ChanBroker.ChanBroker) {
 }
 
 func SubscriberDo(sub ChanBroker.Subscriber, cb *ChanBroker.ChanBroker) {
+
 	n := 100 + rand.Int63n(10000)
 	tn := time.Duration(n)
 	for {
 		select {
 		case <-cb.Stop:
-			fmt.Println(sub, "exit")
+			// fmt.Println(sub, "exit")
 			return
 		case c, ok := <-sub:
 			if ok == false {
@@ -46,16 +47,24 @@ func SubscriberDo(sub ChanBroker.Subscriber, cb *ChanBroker.ChanBroker) {
 			}
 		case <-time.After(tn * time.Millisecond):
 			cb.UnRegSubscriber(sub)
-
+			// return // 必须退出goroutine，可能出现再次超时，导致重复关闭
 		}
+	}
+}
+
+func RegDo(cb *ChanBroker.ChanBroker, size uint) {
+	sub, err := cb.RegSubscriber(size)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		go SubscriberDo(sub, cb)
 	}
 }
 
 func PubDo(cb *ChanBroker.ChanBroker) {
 	var j uint
-	for j = 0; j < 1000; j++ {
-		sub := cb.RegSubscriber(j)
-		go SubscriberDo(sub, cb)
+	for j = 0; j < 100; j++ {
+		RegDo(cb, j)
 	}
 	n := 10 + rand.Intn(100)
 
@@ -80,17 +89,27 @@ func PubDo(cb *ChanBroker.ChanBroker) {
 
 			ncb := ChanBroker.NewChanBroker(time.Second)
 			go PubDo(ncb)
-
-			cb.StopPublish()
+			for r := 0; r < 100; r++ {
+				go RegDo(cb, uint(r))
+			}
+			for s := 0; s < 10; s++ {
+				go StopDo(cb)
+			}
+			for r := 0; r < 100; r++ {
+				go RegDo(cb, uint(r))
+			}
 			return
 		}
 
 	}
 
 }
+func StopDo(cb *ChanBroker.ChanBroker) {
+	cb.StopPublish()
+}
 
 func main() {
-
+	fmt.Println("start")
 	for i := 0; i < 10; i++ {
 		cb := ChanBroker.NewChanBroker(time.Second)
 		go PubDo(cb)
