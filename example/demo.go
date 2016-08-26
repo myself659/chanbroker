@@ -23,9 +23,6 @@ func UnDoSubscriber(sub ChanBroker.Subscriber, b *ChanBroker.ChanBroker) {
 func SubscriberDo(sub ChanBroker.Subscriber, b *ChanBroker.ChanBroker) {
 	for {
 		select {
-		case <-b.Stop:
-			fmt.Println(sub, "exit")
-			return
 		case c := <-sub:
 			switch t := c.(type) {
 			case string:
@@ -46,7 +43,7 @@ func main() {
 	b := ChanBroker.NewChanBroker(time.Second)
 
 	for i := 0; i < 1000; i++ {
-		sub := b.RegSubscriber(uint(i))
+		sub, _ := b.RegSubscriber(uint(i))
 		if sub != nil {
 			go SubscriberDo(sub, b)
 			go UnDoSubscriber(sub, b)

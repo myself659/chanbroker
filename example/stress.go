@@ -28,9 +28,6 @@ func SubscriberDo(sub ChanBroker.Subscriber, cb *ChanBroker.ChanBroker) {
 	tn := time.Duration(n)
 	for {
 		select {
-		case <-cb.Stop:
-			// fmt.Println(sub, "exit")
-			return
 		case c, ok := <-sub:
 			if ok == false {
 				return
@@ -41,13 +38,17 @@ func SubscriberDo(sub ChanBroker.Subscriber, cb *ChanBroker.ChanBroker) {
 			case int:
 				fmt.Println(sub, "int:", t)
 				t = t
+			case *event:
+				fmt.Println(sub, "event:", t.id)
+				<-time.After(time.Second)
 			case event:
-				fmt.Println(sub, "event:", t)
+				fmt.Println(sub, "event:", t.id)
+				<-time.After(time.Second) // block test
 			default:
 			}
 		case <-time.After(tn * time.Millisecond):
 			cb.UnRegSubscriber(sub)
-			// return // 必须退出goroutine，可能出现再次超时，导致重复关闭
+			// return
 		}
 	}
 }
@@ -69,7 +70,7 @@ func PubDo(cb *ChanBroker.ChanBroker) {
 	n := 10 + rand.Intn(100)
 
 	ticker := time.NewTicker(100 * time.Millisecond)
-	var prefix string = "pub_"
+	var prefix string = ""
 	i := 0
 	for range ticker.C {
 		i++
@@ -80,7 +81,7 @@ func PubDo(cb *ChanBroker.ChanBroker) {
 		} else if i%3 == 1 {
 			cb.PubContent(i)
 		} else {
-			ev := event{i, "event"}
+			ev := &event{i, "event"}
 
 			cb.PubContent(ev)
 		}

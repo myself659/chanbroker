@@ -15,9 +15,9 @@ type event struct {
 func main() {
 	b := ChanBroker.NewChanBroker(time.Second)
 
-	sub1 := b.RegSubscriber(0)
-	sub2 := b.RegSubscriber(2)
-	sub3 := b.RegSubscriber(4)
+	sub1, _ := b.RegSubscriber(0)
+	sub2, _ := b.RegSubscriber(2)
+	sub3, _ := b.RegSubscriber(4)
 	go func(sub1 ChanBroker.Subscriber, b *ChanBroker.ChanBroker) {
 		i := 0
 		for c := range sub1 {
