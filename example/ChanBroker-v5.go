@@ -3,7 +3,6 @@ package ChanBroker
 import (
 	"container/list"
 	"errors"
-	"sync"
 	"time"
 )
 
@@ -17,7 +16,6 @@ type ChanBroker struct {
 	contents    chan Content
 	stop        chan bool
 	subscribers map[Subscriber]*list.List
-	lock        sync.RWMutex
 	timeout     time.Duration
 	cachenum    uint
 	timerChan   <-chan time.Time
@@ -26,6 +24,7 @@ type ChanBroker struct {
 var ErrBrokerExit error = errors.New("ChanBroker exit")
 var ErrPublishTimeOut error = errors.New("ChanBroker Pulish Time out")
 var ErrRegTimeOut error = errors.New("ChanBroker Reg Time out")
+var ErrStopPublishTimeOut error = errors.New("ChanBroker Stop Publish Time out")
 
 func NewChanBroker(timeout time.Duration) *ChanBroker {
 	Broker := new(ChanBroker)
@@ -166,13 +165,13 @@ func (self *ChanBroker) UnRegSubscriber(sub Subscriber) {
 
 }
 
-func (self *ChanBroker) StopPublish() {
+func (self *ChanBroker) StopPublish() error {
 	select {
 	case self.stop <- true:
-		return
+		return nil
 
 	case <-time.After(self.timeout):
-		return
+		return ErrStopPublishTimeOut
 	}
 }
 
