@@ -31,7 +31,7 @@ func NewChanBroker(timeout time.Duration) *ChanBroker {
 	Broker.regSub = make(chan Subscriber)
 	Broker.unRegSub = make(chan Subscriber)
 	Broker.contents = make(chan Content)
-	Broker.stop = make(chan bool)
+	Broker.stop = make(chan bool, 1)
 
 	Broker.subscribers = make(map[Subscriber]*list.List)
 	Broker.timeout = timeout
@@ -44,8 +44,8 @@ func NewChanBroker(timeout time.Duration) *ChanBroker {
 
 func (self *ChanBroker) onContentPush(content Content) {
 	for sub, clist := range self.subscribers {
-
-		for next := clist.Front(); next != nil; {
+		loop := true
+		for next := clist.Front(); next != nil && loop == true; {
 			cur := next
 			next = cur.Next()
 			select {
@@ -55,7 +55,7 @@ func (self *ChanBroker) onContentPush(content Content) {
 				}
 				clist.Remove(cur)
 			default:
-				break // block
+				loop = false
 			}
 		}
 
@@ -82,8 +82,8 @@ func (self *ChanBroker) onContentPush(content Content) {
 
 func (self *ChanBroker) onTimerPush() {
 	for sub, clist := range self.subscribers {
-
-		for next := clist.Front(); next != nil; {
+		loop := true
+		for next := clist.Front(); next != nil && loop == true; {
 			cur := next
 			next = cur.Next()
 			select {
@@ -93,7 +93,7 @@ func (self *ChanBroker) onTimerPush() {
 				}
 				clist.Remove(cur)
 			default:
-				break // block
+				loop = false
 			}
 		}
 	}
@@ -128,13 +128,21 @@ func (self *ChanBroker) run() {
 					close(sub)
 				}
 
-			case <-self.stop:
-				for sub := range self.subscribers {
-					delete(self.subscribers, sub)
-					close(sub)
+			case _, ok := <-self.stop:
+				if ok == true {
+					close(self.stop)
+				} else {
+					if self.cachenum == 0 {
+						return
+					}
 				}
-
-				return // exit goroutine
+				self.onTimerPush()
+				for sub, clist := range self.subscribers {
+					if clist.Len() == 0 {
+						delete(self.subscribers, sub)
+						close(sub)
+					}
+				}
 			}
 		}
 	}()
@@ -169,7 +177,6 @@ func (self *ChanBroker) StopPublish() error {
 	select {
 	case self.stop <- true:
 		return nil
-
 	case <-time.After(self.timeout):
 		return ErrStopPublishTimeOut
 	}
