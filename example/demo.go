@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"github.com/myself659/ChanBroker"
-	"math/rand"
-	"strconv"
 	"time"
 )
 
@@ -13,65 +11,57 @@ type event struct {
 	info string
 }
 
-func UnDoSubscriber(sub ChanBroker.Subscriber, b *ChanBroker.ChanBroker) {
-	n := rand.Int63n(100)
-	tn := time.Duration(n)
-	<-time.After(tn * time.Second)
-	b.UnRegSubscriber(sub)
-}
-
-func SubscriberDo(sub ChanBroker.Subscriber, b *ChanBroker.ChanBroker) {
+func SubscriberDo(sub ChanBroker.Subscriber, b *ChanBroker.ChanBroker, id int) {
 	for {
 		select {
 		case c := <-sub:
 			switch t := c.(type) {
-			case string:
-				fmt.Println(sub, "string:", t)
-			case int:
-				fmt.Println(sub, "int:", t)
-				t = t
 			case event:
-				fmt.Println(sub, "event:", t)
+				fmt.Println("SubscriberId:", id, " event:", t)
 			default:
-
 			}
 		}
 	}
 
 }
-func main() {
-	b := ChanBroker.NewChanBroker(time.Second)
 
-	for i := 0; i < 1000; i++ {
-		sub, _ := b.RegSubscriber(uint(i))
-		if sub != nil {
-			go SubscriberDo(sub, b)
-			go UnDoSubscriber(sub, b)
-		}
-	}
-
+func PublisherDo(b *ChanBroker.ChanBroker) {
 	ticker := time.NewTicker(time.Second)
-
-	var prefix string = "pub_"
 	i := 0
 	for range ticker.C {
+		ev := event{i, "event"}
+		b.PubContent(ev)
+		fmt.Println("Publisher:", ev)
 		i++
-		if i%3 == 0 {
-			var temp string
-			temp = prefix + strconv.Itoa(i)
-			b.PubContent(temp)
-		} else if i%3 == 1 {
-			b.PubContent(i)
-		} else {
-			ev := event{i, "event"}
-			b.PubContent(ev)
-		}
-		if i == 100 {
+		if 3 == i {
 			break
 		}
 	}
 	ticker.Stop()
-	b.StopPublish()
-	<-time.After(time.Second)
+
+	b.StopBroker()
+}
+
+func main() {
+	// launch broker goroutine
+	b := ChanBroker.NewChanBroker(time.Second)
+
+	// register  Subscriber and launch  Subscriber goroutine
+
+	sub1, _ := b.RegSubscriber(1)
+
+	go SubscriberDo(sub1, b, 1)
+
+	sub2, _ := b.RegSubscriber(1)
+
+	go SubscriberDo(sub2, b, 2)
+
+	// launch Publisher goroutine
+
+	go PublisherDo(b)
+
+	// after 3.5s, exit process
+	<-time.After(3500 * time.Millisecond)
+
 	fmt.Println("exit")
 }

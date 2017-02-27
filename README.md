@@ -1,47 +1,103 @@
-# ChanBroker
 
-# 简单性能测试示例 
+### Introduction 
 
-## 写文件 
-```
-root@ubuntu:/share/go/src/github.com/myself659/ChanBroker# time  go  run example/profile.go   -n 2000  -t  60    > profile.txt  
-real    1m11.178s
-user    0m45.708s
-sys     2m13.924s
-root@ubuntu:/share/go/src/github.com/myself659/ChanBroker# tail     profile.txt  
-0xc42005a1e0 event: 21827
-0xc42005a1e0 event: 21828
-0xc42005a1e0 event: 21829
-0xc42005a1e0 event: 21830
-0xc42005a1e0 event: 21831
-0xc42005a1e0 event: 21832
-0xc42005a1e0 event: 21833
-0xc42005a1e0 event: 21834
-0xc42005a1e0 has recv: 21835
-total: 43670000
+ChanBroker,  a Broker for goroutine, is simliar to kafka 
+
+In ChanBroker has three types of goroutine:
+- Producer
+- Consumer(Subscriber) 
+- Broker 
+
+
+### Usage 
+
+code:
 
 ```
+package main
 
-以real time计算性能结果如下：
+import (
+    "fmt"
+    "github.com/myself659/ChanBroker"
+    "time"
+)
 
-每秒发送与接收消息个数： 43670000/72= 606527  
-每秒可以发布消息个数：21835/60 = 363 
+type event struct {
+    id   int
+    info string
+}
 
-### 不写文件
+func SubscriberDo(sub ChanBroker.Subscriber, b *ChanBroker.ChanBroker, id int) {
+    for {
+        select {
+        case c := <-sub:
+            switch t := c.(type) {
+            case event:
+                fmt.Println("SubscriberId:", id, " event:", t)
+            default:
+            }
+        }
+    }
+
+}
+
+func PublisherDo(b *ChanBroker.ChanBroker) {
+    ticker := time.NewTicker(time.Second)
+    i := 0
+    for range ticker.C {
+        ev := event{i, "event"}
+        b.PubContent(ev)
+        fmt.Println("Publisher:", ev)
+        i++
+        if 3 == i {
+            break
+        }
+    }
+    ticker.Stop()
+
+    b.StopBroker()
+}
+
+func main() {
+    // launch broker goroutine
+    b := ChanBroker.NewChanBroker(time.Second)
+
+    // register  Subscriber and launch  Subscriber goroutine
+
+    sub1, _ := b.RegSubscriber(1)
+
+    go SubscriberDo(sub1, b, 1)
+
+    sub2, _ := b.RegSubscriber(1)
+
+    go SubscriberDo(sub2, b, 2)
+
+    // launch Publisher goroutine
+
+    go PublisherDo(b)
+
+    // after 3.5s, exit process
+    <-time.After(3500 * time.Millisecond)
+
+    fmt.Println("exit")
+}
 
 ```
-root@ubuntu:/share/go/src/github.com/myself659/ChanBroker# time  go  run example/profile.go   -n 2000  -t  60  
 
-···
-0xc42007c120 has recv: 159444
-total: 318888000
 
-real    1m7.561s
-user    2m21.824s
-sys     0m20.936s
+output:
+```
+Publisher: {0 event}
+SubscriberId: 1  event: {0 event}
+SubscriberId: 2  event: {0 event}
+Publisher: {1 event}
+SubscriberId: 2  event: {1 event}
+SubscriberId: 1  event: {1 event}
+Publisher: {2 event}
+SubscriberId: 2  event: {2 event}
+SubscriberId: 1  event: {2 event}
+exit
 ```
 
-以user time计算性能结果如下：
 
-每秒发送与接收消息个数： 318888000/142= 2445690 
-每秒可以发布消息个数：159444/60 = 2657   
+

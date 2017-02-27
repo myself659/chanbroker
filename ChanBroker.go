@@ -24,13 +24,13 @@ type ChanBroker struct {
 var ErrBrokerExit error = errors.New("ChanBroker exit")
 var ErrPublishTimeOut error = errors.New("ChanBroker Pulish Time out")
 var ErrRegTimeOut error = errors.New("ChanBroker Reg Time out")
-var ErrStopPublishTimeOut error = errors.New("ChanBroker Stop Publish Time out")
+var ErrStopBrokerTimeOut error = errors.New("ChanBroker Stop Broker Time out")
 
 func NewChanBroker(timeout time.Duration) *ChanBroker {
 	Broker := new(ChanBroker)
 	Broker.regSub = make(chan Subscriber)
 	Broker.unRegSub = make(chan Subscriber)
-	Broker.contents = make(chan Content)
+	Broker.contents = make(chan Content, 16)
 	Broker.stop = make(chan bool, 1)
 
 	Broker.subscribers = make(map[Subscriber]*list.List)
@@ -173,12 +173,12 @@ func (self *ChanBroker) UnRegSubscriber(sub Subscriber) {
 
 }
 
-func (self *ChanBroker) StopPublish() error {
+func (self *ChanBroker) StopBroker() error {
 	select {
 	case self.stop <- true:
 		return nil
 	case <-time.After(self.timeout):
-		return ErrStopPublishTimeOut
+		return ErrStopBrokerTimeOut
 	}
 }
 
