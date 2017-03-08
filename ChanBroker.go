@@ -133,6 +133,10 @@ func (self *ChanBroker) run() {
 					close(self.stop)
 				} else {
 					if self.cachenum == 0 {
+						for sub := range self.subscribers {
+							delete(self.subscribers, sub)
+							close(sub)
+						}
 						return
 					}
 				}
