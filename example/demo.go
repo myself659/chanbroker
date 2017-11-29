@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/myself659/ChanBroker"
 	"time"
+
+	"github.com/myself659/ChanBroker"
 )
 
 type event struct {
@@ -11,7 +12,7 @@ type event struct {
 	info string
 }
 
-func SubscriberDo(sub ChanBroker.Subscriber, b *ChanBroker.ChanBroker, id int) {
+func subscriberDo(sub ChanBroker.Subscriber, b *ChanBroker.ChanBroker, id int) {
 	for {
 		select {
 		case c := <-sub:
@@ -25,7 +26,7 @@ func SubscriberDo(sub ChanBroker.Subscriber, b *ChanBroker.ChanBroker, id int) {
 
 }
 
-func PublisherDo(b *ChanBroker.ChanBroker) {
+func publisherDo(b *ChanBroker.ChanBroker) {
 	ticker := time.NewTicker(time.Second)
 	i := 0
 	for range ticker.C {
@@ -44,21 +45,21 @@ func PublisherDo(b *ChanBroker.ChanBroker) {
 
 func main() {
 	// launch broker goroutine
-	b := ChanBroker.NewChanBroker(time.Second)
+	b := ChanBroker.NewChanBroker("topic-1", time.Second)
 
 	// register  Subscriber and launch  Subscriber goroutine
 
-	sub1, _ := b.RegSubscriber(1)
+	sub1, _, _ := b.RegSubscriber(1)
 
-	go SubscriberDo(sub1, b, 1)
+	go subscriberDo(sub1, b, 1)
 
-	sub2, _ := b.RegSubscriber(1)
+	sub2, _, _ := b.RegSubscriber(1)
 
-	go SubscriberDo(sub2, b, 2)
+	go subscriberDo(sub2, b, 2)
 
 	// launch Publisher goroutine
 
-	go PublisherDo(b)
+	go publisherDo(b)
 
 	// after 3.5s, exit process
 	<-time.After(3500 * time.Millisecond)

@@ -6,192 +6,291 @@ import (
 	"time"
 )
 
+// Content Content
 type Content interface{}
 
-type Subscriber chan Content
-
-type ChanBroker struct {
-	regSub      chan Subscriber
-	unRegSub    chan Subscriber
-	contents    chan Content
-	stop        chan bool
-	subscribers map[Subscriber]*list.List
-	timeout     time.Duration
-	cachenum    uint
-	timerChan   <-chan time.Time
+type contentDesc struct {
+	ctt       Content
+	id        uint64
+	timestamp time.Time
+	count     uint32
 }
 
-var ErrBrokerExit error = errors.New("ChanBroker exit")
-var ErrPublishTimeOut error = errors.New("ChanBroker Pulish Time out")
-var ErrRegTimeOut error = errors.New("ChanBroker Reg Time out")
-var ErrStopBrokerTimeOut error = errors.New("ChanBroker Stop Broker Time out")
+// Subscriber ChanBroker
+type Subscriber chan Content
 
-func NewChanBroker(timeout time.Duration) *ChanBroker {
+// subscriberDesc
+type subscriberDesc struct {
+	id        uint64
+	timestamp time.Time
+	start     uint64
+	current   uint64
+	status    bool
+}
+
+// ChanBroker ChanBroker
+type ChanBroker struct {
+	regSub           chan Subscriber
+	unRegSub         chan Subscriber
+	contents         chan Content
+	cDescs           map[uint64]*contentDesc
+	cidCh            chan uint64
+	sidCh            chan uint64
+	stop             chan bool
+	subscribers      map[Subscriber]*list.List
+	subscriberDescs  map[Subscriber]*subscriberDesc
+	subscriberDescCh chan *subscriberDesc
+	timeout          time.Duration
+	cachenum         uint
+	timerChan        <-chan time.Time
+	name             string
+	topic            string
+	cid              uint64
+}
+
+// ErrBrokerExit ErrBrokerExit
+var ErrBrokerExit = errors.New("ChanBroker exit")
+
+// ErrPublishTimeOut ErrPublishTimeOut
+var ErrPublishTimeOut = errors.New("ChanBroker Pulish Time out")
+
+// ErrRegTimeOut ErrRegTimeOut
+var ErrRegTimeOut = errors.New("ChanBroker Reg Time out")
+
+// ErrStopBrokerTimeOut ErrStopBrokerTimeOut
+var ErrStopBrokerTimeOut = errors.New("ChanBroker Stop Broker Time out")
+
+// NewChanBroker NewChanBroker
+func NewChanBroker(topic string, timeout time.Duration) *ChanBroker {
 	Broker := new(ChanBroker)
 	Broker.regSub = make(chan Subscriber)
 	Broker.unRegSub = make(chan Subscriber)
 	Broker.contents = make(chan Content, 16)
+	Broker.cidCh = make(chan uint64)
+	Broker.sidCh = make(chan uint64)
 	Broker.stop = make(chan bool, 1)
-
+	Broker.cDescs = make(map[uint64]*contentDesc)
 	Broker.subscribers = make(map[Subscriber]*list.List)
+	Broker.subscriberDescs = make(map[Subscriber]*subscriberDesc)
+	Broker.subscriberDescCh = make(chan *subscriberDesc)
 	Broker.timeout = timeout
 	Broker.cachenum = 0
 	Broker.timerChan = nil
+	Broker.topic = topic
+	Broker.name = topic + "-" + time.Now().String()
 	Broker.run()
 
 	return Broker
 }
 
-func (self *ChanBroker) onContentPush(content Content) {
-	for sub, clist := range self.subscribers {
-		loop := true
-		for next := clist.Front(); next != nil && loop == true; {
-			cur := next
-			next = cur.Next()
+func (broker *ChanBroker) onContentPush(content Content) {
+	cid := <-broker.cidCh
+	cDesc := new(contentDesc)
+	cDesc.ctt = content
+	cDesc.id = cid
+	cDesc.count = 0
+	cDesc.timestamp = time.Now()
+	broker.cDescs[cid] = cDesc
+	isTimerPush := false
+	broker.cid = cid
+	for sub, sDesc := range broker.subscriberDescs {
+		var i uint64
+		for i = sDesc.current; i <= broker.cid; i++ {
 			select {
-			case sub <- cur.Value:
-				if self.cachenum > 0 {
-					self.cachenum--
+			case sub <- broker.cDescs[i].ctt:
+				{
+					sDesc.current = sDesc.current + 1
 				}
-				clist.Remove(cur)
 			default:
-				loop = false
-			}
-		}
-
-		len := clist.Len()
-		if len == 0 {
-			select {
-			case sub <- content:
-			default:
-				clist.PushBack(content)
-				self.cachenum++
-			}
-		} else {
-			clist.PushBack(content)
-			self.cachenum++
-		}
-	}
-
-	if self.cachenum > 0 && self.timerChan == nil {
-		timer := time.NewTimer(self.timeout)
-		self.timerChan = timer.C
-	}
-
-}
-
-func (self *ChanBroker) onTimerPush() {
-	for sub, clist := range self.subscribers {
-		loop := true
-		for next := clist.Front(); next != nil && loop == true; {
-			cur := next
-			next = cur.Next()
-			select {
-			case sub <- cur.Value:
-				if self.cachenum > 0 {
-					self.cachenum--
+				{
+					isTimerPush = true
+					break
 				}
-				clist.Remove(cur)
-			default:
-				loop = false
 			}
 		}
+
 	}
 
-	if self.cachenum > 0 {
-		timer := time.NewTimer(self.timeout)
-		self.timerChan = timer.C
+	if isTimerPush == true {
+		if broker.timerChan == nil {
+			timer := time.NewTimer(broker.timeout)
+			broker.timerChan = timer.C
+		}
 	} else {
-		self.timerChan = nil
+		if broker.timerChan != nil {
+			broker.timerChan = nil
+		}
+	}
+
+}
+
+func (broker *ChanBroker) onTimerPush() {
+	var i uint64
+	isTimerPush := false
+	for sub, sDesc := range broker.subscriberDescs {
+		for i = sDesc.current; i <= broker.cid; i++ {
+			select {
+			case sub <- broker.cDescs[i].ctt:
+				{
+					sDesc.current = sDesc.current + 1
+				}
+			default:
+				{
+					isTimerPush = true
+					break
+				}
+			}
+		}
+	}
+
+	if isTimerPush == true {
+		if broker.timerChan == nil {
+			timer := time.NewTimer(broker.timeout)
+			broker.timerChan = timer.C
+		}
+	} else {
+		if broker.timerChan != nil {
+			broker.timerChan = nil
+		}
 	}
 }
 
-func (self *ChanBroker) run() {
+func (broker *ChanBroker) cidDo() {
+	var cid uint64 = 1
+	for {
+		select {
+		case broker.cidCh <- cid:
+			{
+				cid = cid + 1
+			}
+		case _, ok := <-broker.stop:
+			{
+				if ok == true {
+					close(broker.stop)
+				}
+				return // exit goroutine
+			}
+		}
+	}
+}
 
-	go func() { // Broker Goroutine
-		for {
-			select {
-			case content := <-self.contents:
-				self.onContentPush(content)
+func (broker *ChanBroker) sidDo() {
+	var sid uint64 = 1
+	for {
+		select {
+		case broker.sidCh <- sid:
+			{
+				sid = sid + 1
+			}
+		case _, ok := <-broker.stop:
+			{
+				if ok == true {
+					close(broker.stop)
+				}
+				return // exit goroutine
+			}
 
-			case <-self.timerChan:
-				self.onTimerPush()
+		}
 
-			case sub := <-self.regSub:
-				clist := list.New()
-				self.subscribers[sub] = clist
+	}
+}
 
-			case sub := <-self.unRegSub:
-				_, ok := self.subscribers[sub]
-				if ok {
-					delete(self.subscribers, sub)
+func (broker *ChanBroker) brokerDo() {
+	for {
+		select {
+		case content := <-broker.contents:
+			broker.onContentPush(content)
+
+		case <-broker.timerChan:
+			broker.onTimerPush()
+
+		case sub := <-broker.regSub:
+			sid := <-broker.sidCh
+			desc := new(subscriberDesc)
+			desc.id = sid
+			desc.timestamp = time.Now()
+			desc.start = broker.cid + 1
+			broker.subscriberDescs[sub] = desc
+			broker.subscriberDescCh <- desc // sync send
+
+		case sub := <-broker.unRegSub:
+			_, ok := broker.subscriberDescs[sub]
+			if ok {
+				delete(broker.subscriberDescs, sub)
+				close(sub)
+			}
+
+		case _, ok := <-broker.stop:
+			if ok == true {
+				close(broker.stop)
+			}
+			broker.onTimerPush()
+			for sub, sDesc := range broker.subscriberDescs {
+				if sDesc.current >= broker.cid {
+					delete(broker.subscriberDescs, sub)
 					close(sub)
 				}
-
-			case _, ok := <-self.stop:
-				if ok == true {
-					close(self.stop)
-				} else {
-					if self.cachenum == 0 {
-						for sub := range self.subscribers {
-							delete(self.subscribers, sub)
-							close(sub)
-						}
-						return
-					}
-				}
-				self.onTimerPush()
-				for sub, clist := range self.subscribers {
-					if clist.Len() == 0 {
-						delete(self.subscribers, sub)
-						close(sub)
-					}
-				}
 			}
 		}
-	}()
+	}
+}
+func (broker *ChanBroker) run() {
+	go broker.cidDo()
+	go broker.sidDo()
+	go broker.brokerDo()
 }
 
-func (self *ChanBroker) RegSubscriber(size uint) (Subscriber, error) {
+// RegSubscriber  RegSubscriber
+func (broker *ChanBroker) RegSubscriber(size uint) (Subscriber, uint64, error) {
 	sub := make(Subscriber, size)
 
 	select {
 
-	case <-time.After(self.timeout):
-		return nil, ErrRegTimeOut
+	case <-time.After(broker.timeout):
+		{
+			return nil, 0, ErrRegTimeOut
+		}
 
-	case self.regSub <- sub:
-		return sub, nil
+	case broker.regSub <- sub:
+		{
+			// get subscriber id
+			desc := <-broker.subscriberDescCh
+			id := desc.id
+			return sub, id, nil
+		}
 	}
 
 }
 
-func (self *ChanBroker) UnRegSubscriber(sub Subscriber) {
+// UnRegSubscriber UnRegSubscriber
+func (broker *ChanBroker) UnRegSubscriber(sub Subscriber) {
 	select {
-	case <-time.After(self.timeout):
+	case <-time.After(broker.timeout):
 		return
 
-	case self.unRegSub <- sub:
+	case broker.unRegSub <- sub:
 		return
 	}
 
 }
 
-func (self *ChanBroker) StopBroker() error {
+// StopBroker StopBroker
+func (broker *ChanBroker) StopBroker() error {
 	select {
-	case self.stop <- true:
+	case broker.stop <- true:
 		return nil
-	case <-time.After(self.timeout):
+	case <-time.After(broker.timeout):
 		return ErrStopBrokerTimeOut
 	}
 }
 
-func (self *ChanBroker) PubContent(c Content) error {
+// PubContent PubContent
+func (broker *ChanBroker) PubContent(c Content) error {
 	select {
-	case <-time.After(self.timeout):
+	case <-time.After(broker.timeout):
 		return ErrPublishTimeOut
 
-	case self.contents <- c:
+	case broker.contents <- c:
 		return nil
 	}
 
