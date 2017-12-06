@@ -1,8 +1,9 @@
 package ChanBroker
 
 import (
+	"container/list"
+	"errors"
 	"fmt"
-	"sync"
 	"time"
 )
 
@@ -15,11 +16,16 @@ type ChanBroker struct {
 	UnRegSub    chan Subscriber
 	Contents    chan Content
 	Stop        chan bool
-	exit        bool
-	Subscribers map[Subscriber]bool
-	lock        sync.RWMutex
+	Subscribers map[Subscriber]*list.List
 	timeout     time.Duration
+	cachenum    uint
+	timerchan   chan time.Time
 }
+
+var ErrBrokerExit error = errors.New("ChanBroker exit")
+var ErrPublishTimeOut error = errors.New("ChanBroker Pulish Time out")
+var ErrRegTimeOut error = errors.New("ChanBroker Reg Time out")
+var ErrStopTimeOut error = errors.New("ChanBroker Stop Publish Time out")
 
 func NewChanBroker(timeout time.Duration) *ChanBroker {
 	ChanBroker := new(ChanBroker)
@@ -27,79 +33,142 @@ func NewChanBroker(timeout time.Duration) *ChanBroker {
 	ChanBroker.UnRegSub = make(chan Subscriber)
 	ChanBroker.Contents = make(chan Content)
 	ChanBroker.Stop = make(chan bool)
-	ChanBroker.exit = false
-	ChanBroker.Subscribers = make(map[Subscriber]bool)
+
+	ChanBroker.Subscribers = make(map[Subscriber]*list.List)
 	ChanBroker.timeout = timeout
+	ChanBroker.cachenum = 0
+	ChanBroker.timerchan = nil
 	ChanBroker.run()
 
 	return ChanBroker
 }
 
+func (self *ChanBroker) onContentPush(content Content) {
+	for sub, clist := range self.Subscribers {
+
+		for elem := clist.Front(); elem != nil; elem = elem.Next() {
+			select {
+			case sub <- elem.Value:
+				if self.cachenum > 0 {
+					self.cachenum--
+				}
+			default:
+				break // block
+			}
+		}
+
+		len := clist.Len()
+		if len == 0 {
+			select {
+			case sub <- content:
+			default:
+				contentList.PushBack(content)
+				cachenum++
+			}
+		} else {
+			contentList.PushBack(content)
+			cachenum++
+		}
+	}
+
+	if cachenum > 0 && self.timerchan == nil {
+		timer := time.NewTimer(self.timeout)
+		self.timerchan = timer.C
+	}
+
+}
+
+func (self *ChanBroker) onTimerPush() {
+	for sub, clist := range self.Subscribers {
+
+		for elem := clist.Front(); elem != nil; elem = elem.Next() {
+			select {
+			case sub <- elem.Value:
+				if self.cachenum > 0 {
+					self.cachenum--
+				}
+			default:
+				break // block
+			}
+		}
+	}
+
+	if self.cachenum > 0 {
+		timer := time.NewTimer(self.timeout)
+		self.timerchan = timer.C
+	} else {
+		self.timerchan = nil
+	}
+}
+
 func (self *ChanBroker) run() {
 
-	go func() {
+	go func() { // Broker Goroutine
 		for {
 			select {
 			case content := <-self.Contents:
-				go func() {
-					self.lock.RLock()
-					for sub := range self.Subscribers {
-						select {
-						case sub <- content:
-						case <-time.After(self.timeout):
-							fmt.Println(sub, "time out ")
-						}
-
-					}
-					self.lock.RUnlock()
-				}()
+				onContentPush(content)
+			case <-self.timerchan:
+				onTimerPush()
 			case sub := <-self.RegSub:
-				self.lock.Lock()
-				self.Subscribers[sub] = true
-				self.lock.Unlock()
-			case sub := <-self.UnRegSub:
-				self.lock.Lock()
-				delete(self.Subscribers, sub)
-				self.lock.Unlock()
-				close(sub)
-			case <-self.Stop:
-				if self.exit == false {
-					self.exit = true
-					close(self.Stop)
-					self.lock.Lock()
-					for sub := range self.Subscribers {
-						delete(self.Subscribers, sub)
-						close(sub)
-					}
-					self.lock.Unlock()
+				clist := list.New()
+				self.Subscribers[sub] = clist
 
-					return
+			case sub := <-self.UnRegSub:
+				_, ok := self.Subscribers[sub]
+				if ok {
+					delete(self.Subscribers, sub)
+					close(sub)
 				}
+
+			case <-self.Stop:
+				for sub := range self.Subscribers {
+					delete(self.Subscribers, sub)
+					close(sub)
+				}
+
+				return // exit goroutine
 			}
 		}
 	}()
 }
 
-func (self *ChanBroker) RegSubscriber(size uint) Subscriber {
-	if self.exit == true {
-		return nil
+func (self *ChanBroker) RegSubscriber(size uint) (Subscriber, error) {
+	sub := make(Subscriber, size)
+	select {
+	case <-time.After(self.timeout):
+		return nil, ErrRegTimeOut
+	case self.RegSub <- sub:
+		return sub, nil
 	}
-	sub := make(Subscriber, size) // maybe block
-	self.RegSub <- sub
-	return sub
+
 }
 
 func (self *ChanBroker) UnRegSubscriber(sub Subscriber) {
-	if self.exit == true {
+	select {
+	case <-time.After(self.timeout):
+		return
+	case self.UnRegSub <- sub:
 		return
 	}
-	self.UnRegSub <- sub // maybe block
+
 }
 
-func (self *ChanBroker) StopPublish() {
-	self.Stop <- true // maybe block
+func (self *ChanBroker) StopPublish() error {
+	select {
+	case self.Stop <- true:
+		return nil
+	case <-time.After(self.timeout):
+		return ErrStopTimeOut
+	}
 }
 
-func (self *ChanBroker) PubContent(c Content) {
-	self.Contents <- c // maybe block
+func (self *ChanBroker) PubContent(c Content) error {
+	select {
+	case <-time.After(self.timeout):
+		return ErrPublishTimeOut
+	case self.Contents <- c:
+		return nil
+	}
+
 }
