@@ -1,3 +1,5 @@
+// Package ChanBroker a Broker for goroutine, is simliar to kafka
+// ChanBroker has three types of goroutine: Producer, Consumer(Subscriber), Broker
 package ChanBroker
 
 import (
@@ -6,10 +8,13 @@ import (
 	"time"
 )
 
+// Content as interface
 type Content interface{}
 
+// Subscriber as channel for Content
 type Subscriber chan Content
 
+// ChanBroker desc
 type ChanBroker struct {
 	regSub      chan Subscriber
 	unRegSub    chan Subscriber
@@ -21,11 +26,19 @@ type ChanBroker struct {
 	timerChan   <-chan time.Time
 }
 
+// ErrBrokerExit represent  broker goroutine exit
 var ErrBrokerExit error = errors.New("ChanBroker exit")
+
+// ErrPublishTimeOut represent publish context timeout
 var ErrPublishTimeOut error = errors.New("ChanBroker Pulish Time out")
+
+// ErrRegTimeOut represent Subscriber registration  timeout
 var ErrRegTimeOut error = errors.New("ChanBroker Reg Time out")
+
+// ErrStopBrokerTimeOut represent stop broker goroutine  timeout
 var ErrStopBrokerTimeOut error = errors.New("ChanBroker Stop Broker Time out")
 
+// NewChanBroker create a  new  broker
 func NewChanBroker(timeout time.Duration) *ChanBroker {
 	Broker := new(ChanBroker)
 	Broker.regSub = make(chan Subscriber)
@@ -42,16 +55,16 @@ func NewChanBroker(timeout time.Duration) *ChanBroker {
 	return Broker
 }
 
-func (self *ChanBroker) onContentPush(content Content) {
-	for sub, clist := range self.subscribers {
+func (broker *ChanBroker) onContentPush(content Content) {
+	for sub, clist := range broker.subscribers {
 		loop := true
 		for next := clist.Front(); next != nil && loop == true; {
 			cur := next
 			next = cur.Next()
 			select {
 			case sub <- cur.Value:
-				if self.cachenum > 0 {
-					self.cachenum--
+				if broker.cachenum > 0 {
+					broker.cachenum--
 				}
 				clist.Remove(cur)
 			default:
@@ -65,31 +78,31 @@ func (self *ChanBroker) onContentPush(content Content) {
 			case sub <- content:
 			default:
 				clist.PushBack(content)
-				self.cachenum++
+				broker.cachenum++
 			}
 		} else {
 			clist.PushBack(content)
-			self.cachenum++
+			broker.cachenum++
 		}
 	}
 
-	if self.cachenum > 0 && self.timerChan == nil {
-		timer := time.NewTimer(self.timeout)
-		self.timerChan = timer.C
+	if broker.cachenum > 0 && broker.timerChan == nil {
+		timer := time.NewTimer(broker.timeout)
+		broker.timerChan = timer.C
 	}
 
 }
 
-func (self *ChanBroker) onTimerPush() {
-	for sub, clist := range self.subscribers {
+func (broker *ChanBroker) onTimerPush() {
+	for sub, clist := range broker.subscribers {
 		loop := true
 		for next := clist.Front(); next != nil && loop == true; {
 			cur := next
 			next = cur.Next()
 			select {
 			case sub <- cur.Value:
-				if self.cachenum > 0 {
-					self.cachenum--
+				if broker.cachenum > 0 {
+					broker.cachenum--
 				}
 				clist.Remove(cur)
 			default:
@@ -98,52 +111,52 @@ func (self *ChanBroker) onTimerPush() {
 		}
 	}
 
-	if self.cachenum > 0 {
-		timer := time.NewTimer(self.timeout)
-		self.timerChan = timer.C
+	if broker.cachenum > 0 {
+		timer := time.NewTimer(broker.timeout)
+		broker.timerChan = timer.C
 	} else {
-		self.timerChan = nil
+		broker.timerChan = nil
 	}
 }
 
-func (self *ChanBroker) run() {
+func (broker *ChanBroker) run() {
 
 	go func() { // Broker Goroutine
 		for {
 			select {
-			case content := <-self.contents:
-				self.onContentPush(content)
+			case content := <-broker.contents:
+				broker.onContentPush(content)
 
-			case <-self.timerChan:
-				self.onTimerPush()
+			case <-broker.timerChan:
+				broker.onTimerPush()
 
-			case sub := <-self.regSub:
+			case sub := <-broker.regSub:
 				clist := list.New()
-				self.subscribers[sub] = clist
+				broker.subscribers[sub] = clist
 
-			case sub := <-self.unRegSub:
-				_, ok := self.subscribers[sub]
+			case sub := <-broker.unRegSub:
+				_, ok := broker.subscribers[sub]
 				if ok {
-					delete(self.subscribers, sub)
+					delete(broker.subscribers, sub)
 					close(sub)
 				}
 
-			case _, ok := <-self.stop:
+			case _, ok := <-broker.stop:
 				if ok == true {
-					close(self.stop)
+					close(broker.stop)
 				} else {
-					if self.cachenum == 0 {
-						for sub := range self.subscribers {
-							delete(self.subscribers, sub)
+					if broker.cachenum == 0 {
+						for sub := range broker.subscribers {
+							delete(broker.subscribers, sub)
 							close(sub)
 						}
 						return
 					}
 				}
-				self.onTimerPush()
-				for sub, clist := range self.subscribers {
+				broker.onTimerPush()
+				for sub, clist := range broker.subscribers {
 					if clist.Len() == 0 {
-						delete(self.subscribers, sub)
+						delete(broker.subscribers, sub)
 						close(sub)
 					}
 				}
@@ -152,46 +165,50 @@ func (self *ChanBroker) run() {
 	}()
 }
 
-func (self *ChanBroker) RegSubscriber(size uint) (Subscriber, error) {
+// RegSubscriber register subscriber
+func (broker *ChanBroker) RegSubscriber(size uint) (Subscriber, error) {
 	sub := make(Subscriber, size)
 
 	select {
 
-	case <-time.After(self.timeout):
+	case <-time.After(broker.timeout):
 		return nil, ErrRegTimeOut
 
-	case self.regSub <- sub:
+	case broker.regSub <- sub:
 		return sub, nil
 	}
 
 }
 
-func (self *ChanBroker) UnRegSubscriber(sub Subscriber) {
+// UnRegSubscriber unregister subscriber
+func (broker *ChanBroker) UnRegSubscriber(sub Subscriber) {
 	select {
-	case <-time.After(self.timeout):
+	case <-time.After(broker.timeout):
 		return
 
-	case self.unRegSub <- sub:
+	case broker.unRegSub <- sub:
 		return
 	}
 
 }
 
-func (self *ChanBroker) StopBroker() error {
+// StopBroker  stop broker goroutine
+func (broker *ChanBroker) StopBroker() error {
 	select {
-	case self.stop <- true:
+	case broker.stop <- true:
 		return nil
-	case <-time.After(self.timeout):
+	case <-time.After(broker.timeout):
 		return ErrStopBrokerTimeOut
 	}
 }
 
-func (self *ChanBroker) PubContent(c Content) error {
+// PubContent publish content
+func (broker *ChanBroker) PubContent(c Content) error {
 	select {
-	case <-time.After(self.timeout):
+	case <-time.After(broker.timeout):
 		return ErrPublishTimeOut
 
-	case self.contents <- c:
+	case broker.contents <- c:
 		return nil
 	}
 
