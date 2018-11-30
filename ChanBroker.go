@@ -1,4 +1,5 @@
 // Package ChanBroker a Broker for goroutine, is simliar to kafka
+//
 // ChanBroker has three types of goroutine: Producer, Consumer(Subscriber), Broker
 package ChanBroker
 
