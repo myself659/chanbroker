@@ -1,9 +1,9 @@
 
 ### Introduction 
 
-ChanBroker,  a Broker for goroutine, is simliar to kafka 
+chanbroker,  a Broker for goroutine, is simliar to kafka 
 
-In ChanBroker has three types of goroutine:
+In chanbroker has three types of goroutine:
 - Producer
 - Consumer(Subscriber) 
 - Broker 
@@ -18,7 +18,7 @@ package main
 
 import (
     "fmt"
-    "github.com/myself659/ChanBroker"
+    "github.com/myself659/chanbroker"
     "time"
 )
 
@@ -27,7 +27,7 @@ type event struct {
     info string
 }
 
-func SubscriberDo(sub ChanBroker.Subscriber, b *ChanBroker.ChanBroker, id int) {
+func SubscriberDo(sub chanbroker.Subscriber, b *chanbroker.chanbroker, id int) {
     for {
         select {
         case c := <-sub:
@@ -41,7 +41,7 @@ func SubscriberDo(sub ChanBroker.Subscriber, b *ChanBroker.ChanBroker, id int) {
 
 }
 
-func PublisherDo(b *ChanBroker.ChanBroker) {
+func PublisherDo(b *chanbroker.chanbroker) {
     ticker := time.NewTicker(time.Second)
     i := 0
     for range ticker.C {
@@ -60,7 +60,7 @@ func PublisherDo(b *ChanBroker.ChanBroker) {
 
 func main() {
     // launch broker goroutine
-    b := ChanBroker.NewChanBroker(time.Second)
+    b := chanbroker.NewChanBroker(time.Second)
 
     // register  Subscriber and launch  Subscriber goroutine
 
