@@ -1,7 +1,7 @@
-// Package ChanBroker a Broker for goroutine, is simliar to kafka
+// Package chanbroker a Broker for goroutine, is simliar to kafka
 //
-// ChanBroker has three types of goroutine: Producer, Consumer(Subscriber), Broker
-package ChanBroker
+// chanbroker has three types of goroutine: Producer, Consumer(Subscriber), Broker
+package chanbroker
 
 import (
 	"container/list"
@@ -15,8 +15,8 @@ type Content interface{}
 // Subscriber as channel for Content
 type Subscriber chan Content
 
-// ChanBroker desc
-type ChanBroker struct {
+// chanbroker desc
+type chanbroker struct {
 	regSub      chan Subscriber
 	unRegSub    chan Subscriber
 	contents    chan Content
@@ -28,20 +28,20 @@ type ChanBroker struct {
 }
 
 // ErrBrokerExit represent  broker goroutine exit
-var ErrBrokerExit error = errors.New("ChanBroker exit")
+var ErrBrokerExit error = errors.New("chanbroker exit")
 
 // ErrPublishTimeOut represent publish context timeout
-var ErrPublishTimeOut error = errors.New("ChanBroker Pulish Time out")
+var ErrPublishTimeOut error = errors.New("chanbroker Pulish Time out")
 
 // ErrRegTimeOut represent Subscriber registration  timeout
-var ErrRegTimeOut error = errors.New("ChanBroker Reg Time out")
+var ErrRegTimeOut error = errors.New("chanbroker Reg Time out")
 
 // ErrStopBrokerTimeOut represent stop broker goroutine  timeout
-var ErrStopBrokerTimeOut error = errors.New("ChanBroker Stop Broker Time out")
+var ErrStopBrokerTimeOut error = errors.New("chanbroker Stop Broker Time out")
 
 // NewChanBroker create a  new  broker
-func NewChanBroker(timeout time.Duration) *ChanBroker {
-	Broker := new(ChanBroker)
+func NewChanBroker(timeout time.Duration) *chanbroker {
+	Broker := new(chanbroker)
 	Broker.regSub = make(chan Subscriber)
 	Broker.unRegSub = make(chan Subscriber)
 	Broker.contents = make(chan Content, 16)
@@ -56,7 +56,7 @@ func NewChanBroker(timeout time.Duration) *ChanBroker {
 	return Broker
 }
 
-func (broker *ChanBroker) onContentPush(content Content) {
+func (broker *chanbroker) onContentPush(content Content) {
 	for sub, clist := range broker.subscribers {
 		loop := true
 		for next := clist.Front(); next != nil && loop == true; {
@@ -94,7 +94,7 @@ func (broker *ChanBroker) onContentPush(content Content) {
 
 }
 
-func (broker *ChanBroker) onTimerPush() {
+func (broker *chanbroker) onTimerPush() {
 	for sub, clist := range broker.subscribers {
 		loop := true
 		for next := clist.Front(); next != nil && loop == true; {
@@ -120,7 +120,7 @@ func (broker *ChanBroker) onTimerPush() {
 	}
 }
 
-func (broker *ChanBroker) run() {
+func (broker *chanbroker) run() {
 
 	go func() { // Broker Goroutine
 		for {
@@ -167,7 +167,7 @@ func (broker *ChanBroker) run() {
 }
 
 // RegSubscriber register subscriber
-func (broker *ChanBroker) RegSubscriber(size uint) (Subscriber, error) {
+func (broker *chanbroker) RegSubscriber(size uint) (Subscriber, error) {
 	sub := make(Subscriber, size)
 
 	select {
@@ -182,7 +182,7 @@ func (broker *ChanBroker) RegSubscriber(size uint) (Subscriber, error) {
 }
 
 // UnRegSubscriber unregister subscriber
-func (broker *ChanBroker) UnRegSubscriber(sub Subscriber) {
+func (broker *chanbroker) UnRegSubscriber(sub Subscriber) {
 	select {
 	case <-time.After(broker.timeout):
 		return
@@ -194,7 +194,7 @@ func (broker *ChanBroker) UnRegSubscriber(sub Subscriber) {
 }
 
 // StopBroker  stop broker goroutine
-func (broker *ChanBroker) StopBroker() error {
+func (broker *chanbroker) StopBroker() error {
 	select {
 	case broker.stop <- true:
 		return nil
@@ -204,7 +204,7 @@ func (broker *ChanBroker) StopBroker() error {
 }
 
 // PubContent publish content
-func (broker *ChanBroker) PubContent(c Content) error {
+func (broker *chanbroker) PubContent(c Content) error {
 	select {
 	case <-time.After(broker.timeout):
 		return ErrPublishTimeOut
