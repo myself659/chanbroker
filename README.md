@@ -27,7 +27,7 @@ type event struct {
     info string
 }
 
-func SubscriberDo(sub chanbroker.Subscriber, b *chanbroker.chanbroker, id int) {
+func subscriberDo(sub chanbroker.Subscriber, b *chanbroker.Broker, id int) {
     for {
         select {
         case c := <-sub:
@@ -41,7 +41,7 @@ func SubscriberDo(sub chanbroker.Subscriber, b *chanbroker.chanbroker, id int) {
 
 }
 
-func PublisherDo(b *chanbroker.chanbroker) {
+func publisherDo(b *chanbroker.Broker) {
     ticker := time.NewTicker(time.Second)
     i := 0
     for range ticker.C {
@@ -60,21 +60,21 @@ func PublisherDo(b *chanbroker.chanbroker) {
 
 func main() {
     // launch broker goroutine
-    b := chanbroker.NewChanBroker(time.Second)
+    b := chanbroker.NewBroker(time.Second)
 
     // register  Subscriber and launch  Subscriber goroutine
 
     sub1, _ := b.RegSubscriber(1)
 
-    go SubscriberDo(sub1, b, 1)
+    go subscriberDo(sub1, b, 1)
 
     sub2, _ := b.RegSubscriber(1)
 
-    go SubscriberDo(sub2, b, 2)
+    go subscriberDo(sub2, b, 2)
 
     // launch Publisher goroutine
 
-    go PublisherDo(b)
+    go publisherDo(b)
 
     // after 3.5s, exit process
     <-time.After(3500 * time.Millisecond)
