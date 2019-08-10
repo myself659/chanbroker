@@ -8,6 +8,9 @@ In chanbroker has three types of goroutine:
 - Consumer(Subscriber) 
 - Broker 
 
+### Document 
+
+ [参考godoc](https://godoc.org/github.com/myself659/chanbroker)
 
 ### Usage 
 
